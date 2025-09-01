@@ -49,14 +49,15 @@ export interface MeteoraDlmmDbTransactions extends MeteoraDlmmDbSchema {
 }
 
 function isBrowser() {
-  // Check for browser window
-  if (typeof window !== "undefined" && typeof window.document !== "undefined") {
+  // note: the order here matters. web worker first.
+  // Check for Web Worker
+  // @ts-ignore
+  if (typeof self !== 'undefined' && typeof self.importScripts === 'function') {
     return true;
   }
 
-  // Check for Web Worker
-  // @ts-ignore
-  if (typeof self !== "undefined" && typeof self.importScripts === "function") {
+  // Check for browser window
+  if (typeof window !== "undefined" && typeof window.document !== "undefined") {
     return true;
   }
 
@@ -72,7 +73,7 @@ async function initSql() {
   SQL = isBrowser()
     ? await initSqlJs({
         locateFile: (file) =>
-          `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.11.0/${file}`,
+          `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.13.0/${file}`,
       })
     : await initSqlJs();
   return SQL;

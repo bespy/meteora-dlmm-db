@@ -11,13 +11,14 @@ import initSqlJs from "sql.js";
 import MeteoraDlmmDownloader from "./meteora-dlmm-downloader";
 import { delay } from "./util";
 function isBrowser() {
-    // Check for browser window
-    if (typeof window !== "undefined" && typeof window.document !== "undefined") {
-        return true;
-    }
+    // note: the order here matters. web worker first.
     // Check for Web Worker
     // @ts-ignore
-    if (typeof self !== "undefined" && typeof self.importScripts === "function") {
+    if (typeof self !== 'undefined' && typeof self.importScripts === 'function') {
+        return true;
+    }
+    // Check for browser window
+    if (typeof window !== "undefined" && typeof window.document !== "undefined") {
         return true;
     }
     // If neither of the above, it's likely Node.js or another environment
@@ -31,7 +32,7 @@ function initSql() {
         }
         SQL = isBrowser()
             ? yield initSqlJs({
-                locateFile: (file) => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.11.0/${file}`,
+                locateFile: (file) => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.13.0/${file}`,
             })
             : yield initSqlJs();
         return SQL;
