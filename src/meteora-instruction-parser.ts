@@ -22,6 +22,15 @@ import {
   getHawksightTokenTransfers,
 } from "./hawksight-parser";
 
+const snakeToCamel = (str:string) =>
+  str.toLowerCase().replace(/([-_][a-z])/g, group =>
+    group
+      .toUpperCase()
+      .replace('-', '')
+      .replace('_', '')
+  );
+
+// user defined
 export type MeteoraDlmmInstructionType =
   | "open"
   | "add"
@@ -29,6 +38,7 @@ export type MeteoraDlmmInstructionType =
   | "claim"
   | "close";
 
+// IDL defined
 export type MeteoraDlmmInstructionName =
   | "add_liquidity"
   | "add_liquidity2"
@@ -97,8 +107,35 @@ export type MeteoraDlmmInstructionName =
   | "update_reward_duration"
   | "update_reward_funder"
   | "withdraw_ineligible_reward"
-  | "withdraw_protocol_fee";
+  | "withdraw_protocol_fee"
+  // camelCase
+  | "initializePosition"
+  | "initializePositionPda"
+  | "initializePositionByOperator"
+  | "addLiquidity"
+  | "addLiquidity2"
+  | "addLiquidityByWeight"
+  | "addLiquidityByStrategy"
+  | "addLiquidityByStrategy2"
+  | "addLiquidityByStrategyOneSide"
+  | "addLiquidityOneSidePrecise2"
+  | "addLiquidityOneSide"
+  | "addLiquidityOneSidePrecise"
+  | "removeLiquidity"
+  | "removeLiquidity2"
+  | "removeAllLiquidity"
+  | "removeLiquiditySingleSide"
+  | "removeLiquidityByRange"
+  | "removeLiquidityByRange2"
+  | "removeLiquidity"
+  | "claimFee"
+  | "claimFee2"
+  | "closePosition"
+  | "closePositionIfEmpty"
+  | "closePosition2";
 
+
+  // user defined again like chart of accounts
 const INSTRUCTION_MAP: Map<
   MeteoraDlmmInstructionName,
   MeteoraDlmmInstructionType
@@ -126,7 +163,32 @@ const INSTRUCTION_MAP: Map<
   ["close_position", "close"],
   ["close_position_if_empty", "close"],
   ["close_position2", "close"],
-]);
+  // camelCase
+  ["initializePosition", "open"],
+  ["initializePositionPda", "open"],
+  ["initializePositionByOperator", "open"],
+  ["addLiquidity", "add"],
+  ["addLiquidity2", "add"],
+  ["addLiquidityByWeight", "add"],
+  ["addLiquidityByStrategy", "add"],
+  ["addLiquidityByStrategy2", "add"],
+  ["addLiquidityByStrategyOneSide", "add"],
+  ["addLiquidityOneSide", "add"],
+  ["addLiquidityOneSidePrecise", "add"],
+  ["addLiquidityOneSidePrecise2", "add"],
+  ["removeLiquidity", "remove"],
+  ["removeLiquidity2", "remove"],
+  ["removeAllLiquidity", "remove"],
+  ["removeLiquiditySingleSide", "remove"],
+  ["removeLiquidityByRange", "remove"],
+  ["removeLiquidityByRange2", "remove"],
+  ["removeLiquidity", "remove"],
+  ["claimFee", "claim"],
+  ["claimFee2", "claim"],
+  ["closePosition", "close"],
+  ["closePositionIfEmpty", "close"],
+  ["closePosition2", "close"],
+])
 
 interface MeteoraDlmmDecodedInstruction extends Instruction {
   name: MeteoraDlmmInstructionName;
@@ -202,11 +264,12 @@ export function parseMeteoraInstructions(
   if (transaction == null) {
     return [];
   }
+  // todo: log the version of the IDL being used
   const hawksightAccount = getHawksightAccount(transaction);
   const parsedInstructions = transaction.transaction.message.instructions.map(
-    (instruction) =>
-      parseMeteoraInstruction(transaction, instruction, hawksightAccount),
+    (instruction) => parseMeteoraInstruction(transaction, instruction, hawksightAccount)
   );
+  // console.log('meteora-instruction-parser.tsx: parsedInstructions ',parsedInstructions)
   if (transaction.meta?.innerInstructions) {
     const innerInstructions = transaction.meta.innerInstructions
       .map((instruction) => instruction.instructions)
@@ -226,6 +289,7 @@ function parseMeteoraInstruction(
   instruction: PartiallyDecodedInstruction | ParsedInstruction,
   hawksightAccount: string | null,
 ) {
+
   if (instruction.programId.toBase58() == LBCLMM_PROGRAM_IDS["mainnet-beta"]) {
     try {
       if ("data" in instruction) {
@@ -242,6 +306,7 @@ function parseMeteoraInstruction(
       );
     }
   }
+  // todo: list reasons this could be null
   return null;
 }
 
@@ -250,10 +315,15 @@ function getMeteoraInstructionData(
   instruction: PartiallyDecodedInstruction,
   hawksightAccount: string | null,
 ): MeteoraDlmmInstruction | null {
+  // todo: start here Fri 29 Aug 2025
+      // console.log('\n')
+      // console.log(transaction);
+      // console.log(instruction);
   const decodedInstruction = INSTRUCTION_CODER.decode(
     instruction.data,
     "base58",
   ) as MeteoraDlmmDecodedInstruction;
+  
   if (!transaction.blockTime) {
     throw new Error(
       `Transaction blockTime missing from signature ${transaction.transaction.signatures[0]}`,
@@ -261,10 +331,14 @@ function getMeteoraInstructionData(
   }
   if (!decodedInstruction || !INSTRUCTION_MAP.has(decodedInstruction.name)) {
     // Unknown instruction
+    // todo: log here if this happens a lot as IDL may be different version for example in previous version it was snake case (snake_case) and in the current version its camel case (camelCase).
+    console.log(`meteora-transaction-parser.tsx: getMeteoraInstructionData returning null (1)`)
     return null;
   }
   const index = getInstructionIndex(transaction, instruction);
+  // console.log(`meteora-transaction-parser.tsx: instruction index ${index}`)
   if (index == -1) {
+    // console.log(`meteora-transaction-parser.tsx: getMeteoraInstructionData returning null (2)`)
     return null;
   }
   const instructionName = decodedInstruction.name;
@@ -283,7 +357,7 @@ function getMeteoraInstructionData(
     parsedTokenTransfers.length > 0 ? getActiveBinId(transaction, index) : null;
   const removalBps =
     instructionType == "remove" ? getRemovalBps(decodedInstruction) : null;
-  return {
+  const r = {
     isHawksight: Boolean(hawksightAccount),
     signature: transaction.transaction.signatures[0],
     slot: transaction.slot,
@@ -295,6 +369,9 @@ function getMeteoraInstructionData(
     activeBinId,
     removalBps,
   };
+  // console.log('meteora-transaction-parser.tsx: getMeteoraInstructionData returning...')
+  // console.log(r)
+  return r
 }
 
 function parseTokenTransfers(
@@ -308,7 +385,7 @@ function parseTokenTransfers(
         transfer.program == "spl-token" &&
         "parsed" in transfer
       ) {
-        if (transfer.parsed.type == "transferChecked") {
+        if (transfer.parsed.type == "transferChecked" || transfer.parsed.type == "transfer_checked") {
           const { mint, tokenAmount } = transfer.parsed.info;
           const amount = Number(tokenAmount.amount);
 
@@ -358,8 +435,9 @@ function getPositionAccounts(
       (account) => account.name == "Position",
     )!;
     const position = positionAccount.pubkey.toBase58();
+    console.log('meteora-instruction-parser.tsx: getPositionAccounts',accounts)
     const lbPairAccount = accounts.find(
-      (account) => account.name == "Lb_pair",
+      (account) => account.name == "Lb Pair" || account.name == "Lb_pair",
     )!;
     const lbPair = lbPairAccount.pubkey.toBase58();
     const senderAccount = accounts.find(
@@ -367,16 +445,16 @@ function getPositionAccounts(
     )!;
     const sender = hawksightAccount || senderAccount.pubkey.toBase58();
     const tokenXMint = accounts
-      .find((account) => account.name == "Token_x_mint")
+      .find((account) => account.name == "Token_x_mint" || account.name == "Token_x_mint")
       ?.pubkey?.toBase58();
     const tokenYMint = accounts
-      .find((account) => account.name == "Token_y_mint")
+      .find((account) => account.name == "Token_y_mint" || account.name == "Token_y_mint")
       ?.pubkey?.toBase58();
     const userTokenX = accounts
-      .find((account) => account.name == "User_token_x")
+      .find((account) => account.name == "User_token_x" || account.name == "User_token_x")
       ?.pubkey?.toBase58();
     const userTokenY = accounts
-      .find((account) => account.name == "User_token_y")
+      .find((account) => account.name == "User_token_y" || account.name == "User_token_y")
       ?.pubkey?.toBase58();
 
     return {
@@ -390,6 +468,7 @@ function getPositionAccounts(
     };
   } catch (err) {
     switch (decodedInstruction.name) {
+      case "initializePosition":
       case "initialize_position":
         return {
           position: accountMetas[1].pubkey.toBase58(),
@@ -397,24 +476,31 @@ function getPositionAccounts(
           sender: hawksightAccount || accountMetas[3].pubkey.toBase58(),
         };
 
-      case "add_liquidity_one_side":
-      case "add_liquidity_one_side_precise":
+      case "addLiquidityOneSide":
+        case "add_liquidity_one_side":
+      case "addLiquidityOneSidePrecise":
+        case "add_liquidity_one_side_precise":
         return {
           position: accountMetas[0].pubkey.toBase58(),
           lbPair: accountMetas[1].pubkey.toBase58(),
           sender: hawksightAccount || accountMetas[8].pubkey.toBase58(),
         };
 
-      case "add_liquidity_by_weight":
+      case "addLiquidityByWeight":
+        case "add_liquidity_by_weight":
         return {
           position: accountMetas[0].pubkey.toBase58(),
           lbPair: accountMetas[1].pubkey.toBase58(),
           sender: hawksightAccount || accountMetas[11].pubkey.toBase58(),
         };
 
+      case "addLiquidity2":
       case "add_liquidity2":
+      case "addLiquidityByStrategy2":
       case "add_liquidity_by_strategy2":
+      case "removeLiquidity2": 
       case "remove_liquidity2":
+      case "removeLiquidityByRange2":
       case "remove_liquidity_by_range2":
         return {
           position: accountMetas[0].pubkey.toBase58(),
@@ -422,6 +508,7 @@ function getPositionAccounts(
           sender: hawksightAccount || accountMetas[9].pubkey.toBase58(),
         };
 
+      case "addLiquidityOneSidePrecise2":
       case "add_liquidity_one_side_precise2":
         return {
           position: accountMetas[0].pubkey.toBase58(),
@@ -429,15 +516,18 @@ function getPositionAccounts(
           sender: hawksightAccount || accountMetas[6].pubkey.toBase58(),
         };
 
-      case "claim_fee2":
+      case "claimFee2":
+        case "claim_fee2":
         return {
           position: accountMetas[1].pubkey.toBase58(),
           lbPair: accountMetas[0].pubkey.toBase58(),
           sender: hawksightAccount || accountMetas[2].pubkey.toBase58(),
         };
 
-      case "close_position2":
-      case "close_position_if_empty":
+      case "closePosition2":
+        case "close_position2":
+      case "closePositionIfEmpty":
+        case "close_position_if_empty":
         return {
           position: accountMetas[0].pubkey.toBase58(),
           lbPair: "",
@@ -520,7 +610,7 @@ function getActiveBinId(
 
       const eventWithActiveBinId = events.find(
         (event) =>
-          event && ("active_bin_id" in event.data || "bin_id" in event.data),
+         event && ("activeBinId" in event.data || "active_bin_id" in event.data),
       );
 
       return eventWithActiveBinId
@@ -535,10 +625,10 @@ function getActiveBinId(
 function getRemovalBps(
   decodedInstruction: MeteoraDlmmDecodedInstruction,
 ): number | null {
-  if ("bpsToRemove" in decodedInstruction.data) {
+  if ("bpsToRemove" in decodedInstruction.data || "bps_to_remove" in decodedInstruction.data) {
     return Number(decodedInstruction.data.bpsToRemove);
   }
-  if ("binLiquidityRemoval" in decodedInstruction.data) {
+  if ("binLiquidityRemoval" in decodedInstruction.data  || "bin_liquidity_removal" in decodedInstruction.data) {
     return Number(decodedInstruction.data.binLiquidityRemoval[0].bpsToRemove);
   }
   if (decodedInstruction.name.match(/remove/i)) {

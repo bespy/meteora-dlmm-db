@@ -3,6 +3,11 @@ import { BorshEventCoder, BorshInstructionCoder, } from "@coral-xyz/anchor";
 import { base64, bs58 } from "@coral-xyz/anchor/dist/cjs/utils/bytes";
 import { getInstructionIndex, getAccountMetas, getTokenTransfers, } from "./solana-transaction-utils";
 import { getHawksightAccount, getHawksightTokenTransfers, } from "./hawksight-parser";
+const snakeToCamel = (str) => str.toLowerCase().replace(/([-_][a-z])/g, group => group
+    .toUpperCase()
+    .replace('-', '')
+    .replace('_', ''));
+// user defined again like chart of accounts
 const INSTRUCTION_MAP = new Map([
     ["initialize_position", "open"],
     ["initialize_position_pda", "open"],
@@ -27,6 +32,31 @@ const INSTRUCTION_MAP = new Map([
     ["close_position", "close"],
     ["close_position_if_empty", "close"],
     ["close_position2", "close"],
+    // camelCase
+    ["initializePosition", "open"],
+    ["initializePositionPda", "open"],
+    ["initializePositionByOperator", "open"],
+    ["addLiquidity", "add"],
+    ["addLiquidity2", "add"],
+    ["addLiquidityByWeight", "add"],
+    ["addLiquidityByStrategy", "add"],
+    ["addLiquidityByStrategy2", "add"],
+    ["addLiquidityByStrategyOneSide", "add"],
+    ["addLiquidityOneSide", "add"],
+    ["addLiquidityOneSidePrecise", "add"],
+    ["addLiquidityOneSidePrecise2", "add"],
+    ["removeLiquidity", "remove"],
+    ["removeLiquidity2", "remove"],
+    ["removeAllLiquidity", "remove"],
+    ["removeLiquiditySingleSide", "remove"],
+    ["removeLiquidityByRange", "remove"],
+    ["removeLiquidityByRange2", "remove"],
+    ["removeLiquidity", "remove"],
+    ["claimFee", "claim"],
+    ["claimFee2", "claim"],
+    ["closePosition", "close"],
+    ["closePositionIfEmpty", "close"],
+    ["closePosition2", "close"],
 ]);
 const INSTRUCTION_CODER = new BorshInstructionCoder(IDL);
 let EVENT_CODER = new BorshEventCoder(IDL);
@@ -62,8 +92,10 @@ export function parseMeteoraInstructions(transaction) {
     if (transaction == null) {
         return [];
     }
+    // todo: log the version of the IDL being used
     const hawksightAccount = getHawksightAccount(transaction);
     const parsedInstructions = transaction.transaction.message.instructions.map((instruction) => parseMeteoraInstruction(transaction, instruction, hawksightAccount));
+    // console.log('meteora-instruction-parser.tsx: parsedInstructions ',parsedInstructions)
     if ((_a = transaction.meta) === null || _a === void 0 ? void 0 : _a.innerInstructions) {
         const innerInstructions = transaction.meta.innerInstructions
             .map((instruction) => instruction.instructions)
@@ -87,19 +119,28 @@ function parseMeteoraInstruction(transaction, instruction, hawksightAccount) {
             throw new Error(`Failed to parse Meteora DLMM instruction on signature ${transaction.transaction.signatures[0]}`);
         }
     }
+    // todo: list reasons this could be null
     return null;
 }
 function getMeteoraInstructionData(transaction, instruction, hawksightAccount) {
+    // todo: start here Fri 29 Aug 2025
+    // console.log('\n')
+    // console.log(transaction);
+    // console.log(instruction);
     const decodedInstruction = INSTRUCTION_CODER.decode(instruction.data, "base58");
     if (!transaction.blockTime) {
         throw new Error(`Transaction blockTime missing from signature ${transaction.transaction.signatures[0]}`);
     }
     if (!decodedInstruction || !INSTRUCTION_MAP.has(decodedInstruction.name)) {
         // Unknown instruction
+        // todo: log here if this happens a lot as IDL may be different version for example in previous version it was snake case (snake_case) and in the current version its camel case (camelCase).
+        console.log(`meteora-transaction-parser.tsx: getMeteoraInstructionData returning null (1)`);
         return null;
     }
     const index = getInstructionIndex(transaction, instruction);
+    // console.log(`meteora-transaction-parser.tsx: instruction index ${index}`)
     if (index == -1) {
+        // console.log(`meteora-transaction-parser.tsx: getMeteoraInstructionData returning null (2)`)
         return null;
     }
     const instructionName = decodedInstruction.name;
@@ -112,7 +153,7 @@ function getMeteoraInstructionData(transaction, instruction, hawksightAccount) {
     const tokenTransfers = parseTokenTransfers(parsedTokenTransfers, accounts);
     const activeBinId = parsedTokenTransfers.length > 0 ? getActiveBinId(transaction, index) : null;
     const removalBps = instructionType == "remove" ? getRemovalBps(decodedInstruction) : null;
-    return {
+    const r = {
         isHawksight: Boolean(hawksightAccount),
         signature: transaction.transaction.signatures[0],
         slot: transaction.slot,
@@ -124,6 +165,9 @@ function getMeteoraInstructionData(transaction, instruction, hawksightAccount) {
         activeBinId,
         removalBps,
     };
+    // console.log('meteora-transaction-parser.tsx: getMeteoraInstructionData returning...')
+    // console.log(r)
+    return r;
 }
 function parseTokenTransfers(transfers, accounts) {
     return transfers
@@ -131,7 +175,7 @@ function parseTokenTransfers(transfers, accounts) {
         if ("program" in transfer &&
             transfer.program == "spl-token" &&
             "parsed" in transfer) {
-            if (transfer.parsed.type == "transferChecked") {
+            if (transfer.parsed.type == "transferChecked" || transfer.parsed.type == "transfer_checked") {
                 const { mint, tokenAmount } = transfer.parsed.info;
                 const amount = Number(tokenAmount.amount);
                 return {
@@ -165,18 +209,19 @@ function getPositionAccounts(decodedInstruction, accountMetas, hawksightAccount)
         const { accounts } = INSTRUCTION_CODER.format(decodedInstruction, accountMetas);
         const positionAccount = accounts.find((account) => account.name == "Position");
         const position = positionAccount.pubkey.toBase58();
-        const lbPairAccount = accounts.find((account) => account.name == "Lb_pair");
+        console.log('meteora-instruction-parser.tsx: getPositionAccounts', accounts);
+        const lbPairAccount = accounts.find((account) => account.name == "Lb Pair" || account.name == "Lb_pair");
         const lbPair = lbPairAccount.pubkey.toBase58();
         const senderAccount = accounts.find((account) => account.name == "Sender" || account.name == "Owner");
         const sender = hawksightAccount || senderAccount.pubkey.toBase58();
         const tokenXMint = (_b = (_a = accounts
-            .find((account) => account.name == "Token_x_mint")) === null || _a === void 0 ? void 0 : _a.pubkey) === null || _b === void 0 ? void 0 : _b.toBase58();
+            .find((account) => account.name == "Token_x_mint" || account.name == "Token_x_mint")) === null || _a === void 0 ? void 0 : _a.pubkey) === null || _b === void 0 ? void 0 : _b.toBase58();
         const tokenYMint = (_d = (_c = accounts
-            .find((account) => account.name == "Token_y_mint")) === null || _c === void 0 ? void 0 : _c.pubkey) === null || _d === void 0 ? void 0 : _d.toBase58();
+            .find((account) => account.name == "Token_y_mint" || account.name == "Token_y_mint")) === null || _c === void 0 ? void 0 : _c.pubkey) === null || _d === void 0 ? void 0 : _d.toBase58();
         const userTokenX = (_f = (_e = accounts
-            .find((account) => account.name == "User_token_x")) === null || _e === void 0 ? void 0 : _e.pubkey) === null || _f === void 0 ? void 0 : _f.toBase58();
+            .find((account) => account.name == "User_token_x" || account.name == "User_token_x")) === null || _e === void 0 ? void 0 : _e.pubkey) === null || _f === void 0 ? void 0 : _f.toBase58();
         const userTokenY = (_h = (_g = accounts
-            .find((account) => account.name == "User_token_y")) === null || _g === void 0 ? void 0 : _g.pubkey) === null || _h === void 0 ? void 0 : _h.toBase58();
+            .find((account) => account.name == "User_token_y" || account.name == "User_token_y")) === null || _g === void 0 ? void 0 : _g.pubkey) === null || _h === void 0 ? void 0 : _h.toBase58();
         return {
             position,
             lbPair,
@@ -189,47 +234,59 @@ function getPositionAccounts(decodedInstruction, accountMetas, hawksightAccount)
     }
     catch (err) {
         switch (decodedInstruction.name) {
+            case "initializePosition":
             case "initialize_position":
                 return {
                     position: accountMetas[1].pubkey.toBase58(),
                     lbPair: accountMetas[2].pubkey.toBase58(),
                     sender: hawksightAccount || accountMetas[3].pubkey.toBase58(),
                 };
+            case "addLiquidityOneSide":
             case "add_liquidity_one_side":
+            case "addLiquidityOneSidePrecise":
             case "add_liquidity_one_side_precise":
                 return {
                     position: accountMetas[0].pubkey.toBase58(),
                     lbPair: accountMetas[1].pubkey.toBase58(),
                     sender: hawksightAccount || accountMetas[8].pubkey.toBase58(),
                 };
+            case "addLiquidityByWeight":
             case "add_liquidity_by_weight":
                 return {
                     position: accountMetas[0].pubkey.toBase58(),
                     lbPair: accountMetas[1].pubkey.toBase58(),
                     sender: hawksightAccount || accountMetas[11].pubkey.toBase58(),
                 };
+            case "addLiquidity2":
             case "add_liquidity2":
+            case "addLiquidityByStrategy2":
             case "add_liquidity_by_strategy2":
+            case "removeLiquidity2":
             case "remove_liquidity2":
+            case "removeLiquidityByRange2":
             case "remove_liquidity_by_range2":
                 return {
                     position: accountMetas[0].pubkey.toBase58(),
                     lbPair: accountMetas[1].pubkey.toBase58(),
                     sender: hawksightAccount || accountMetas[9].pubkey.toBase58(),
                 };
+            case "addLiquidityOneSidePrecise2":
             case "add_liquidity_one_side_precise2":
                 return {
                     position: accountMetas[0].pubkey.toBase58(),
                     lbPair: accountMetas[1].pubkey.toBase58(),
                     sender: hawksightAccount || accountMetas[6].pubkey.toBase58(),
                 };
+            case "claimFee2":
             case "claim_fee2":
                 return {
                     position: accountMetas[1].pubkey.toBase58(),
                     lbPair: accountMetas[0].pubkey.toBase58(),
                     sender: hawksightAccount || accountMetas[2].pubkey.toBase58(),
                 };
+            case "closePosition2":
             case "close_position2":
+            case "closePositionIfEmpty":
             case "close_position_if_empty":
                 return {
                     position: accountMetas[0].pubkey.toBase58(),
@@ -293,7 +350,7 @@ function getActiveBinId(transaction, index) {
                 const eventData = base64.encode(ixData.subarray(8));
                 return EVENT_CODER.decode(eventData);
             });
-            const eventWithActiveBinId = events.find((event) => event && ("active_bin_id" in event.data || "bin_id" in event.data));
+            const eventWithActiveBinId = events.find((event) => event && ("activeBinId" in event.data || "active_bin_id" in event.data));
             return eventWithActiveBinId
                 ? eventWithActiveBinId.data.active_bin_id ||
                     eventWithActiveBinId.data.bin_id
@@ -303,10 +360,10 @@ function getActiveBinId(transaction, index) {
     return null;
 }
 function getRemovalBps(decodedInstruction) {
-    if ("bpsToRemove" in decodedInstruction.data) {
+    if ("bpsToRemove" in decodedInstruction.data || "bps_to_remove" in decodedInstruction.data) {
         return Number(decodedInstruction.data.bpsToRemove);
     }
-    if ("binLiquidityRemoval" in decodedInstruction.data) {
+    if ("binLiquidityRemoval" in decodedInstruction.data || "bin_liquidity_removal" in decodedInstruction.data) {
         return Number(decodedInstruction.data.binLiquidityRemoval[0].bpsToRemove);
     }
     if (decodedInstruction.name.match(/remove/i)) {
